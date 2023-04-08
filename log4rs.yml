@@ -1,0 +1,30 @@
+appenders:
+  # An appender named "stdout" that writes to stdout
+  stdout:
+    kind: console
+    encoder:
+      pattern: "{d} - {l} -{t} - {m}{n}"
+
+  # An appender named "file" that writes to a file with a custom pattern encoder
+  file:
+    kind: file
+    path: "log/test.log"
+    encoder:
+      pattern: "{d} - {l} - {t} - {m}{n}"
+
+# Set the default logging level to "warn" and attach the "stdout" appender to the root
+root:
+  level: info
+  appenders:
+    - stdout
+    - file
+
+loggers:
+  # Route log events sent to the "app" logger to the "file" appender,
+  # and *not* the normal appenders installed at the root
+  # use like this : log::info!(target:"app", "File info");
+  app:
+    level: info
+    appenders:
+      - file
+    additive: false
