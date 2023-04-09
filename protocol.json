@@ -1,0 +1,58 @@
+{
+    "protocol": [
+    {
+        "detail": "主动模式，每次request的间隔100，request内每帧间隔25ms，失效超时2000ms，循环3次数",
+        "mode": "active",
+        "frame_interval": 25,
+        "requests_interval": 100,
+        "timeout" : 2000,
+        "cycle" : 3,
+        "messages":[
+            {
+                "id":1,
+                "detail":"",
+                "request":[
+                    {"detail":"数据格式十六进制","format":"hex","length":6,"data":[1,2,3,4,5,6]}
+                ],
+                "response":[
+                    {"detail":"id为1request的响应","format":"str","length":6,"data":["a","b","c","d","e","f"]}
+                ]
+            },
+            {
+                "id":2,
+                "request":[
+                    {"detail":"数据格式十六进制","format":"str","length":6,"data":["1","2","3","4","5","6"]}
+                ],
+                "response":[
+                    {"detail":"id为1的request响应","format":"str","length":6,"data":["1","2","3","4","5","6"]}
+                ]
+            }
+        ]
+    },
+    {
+        "detail": "被动模式",
+        "mode": "passive",
+        "messages":[
+            {
+                "id":1,
+                "detail":"",
+                "receive":[
+                    {"detail":"数据格式十六进制","format":"hex","length":6,"data":[1,2,3,4,5,6]}
+                ],
+                "send":[
+                    {"format":"str","length":6,"data":["a","b","c","d","e","f"]}
+                ]
+            },
+            {
+                "id":2,
+                "receive":[
+                    {"detail":"数据格式十六进制","format":"str","length":6,"data":["1","2","3","4","5","6"]}
+                ],
+                "send":[
+                    {"format":"str","length":6,"data":["1","2","3","4","5","6"]}
+                ]
+            }
+        ]
+    }
+    ]
+}

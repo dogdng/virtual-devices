@@ -13,7 +13,7 @@
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            },
             "presentation": {
                 "reveal": "always"
             },
@@ -24,6 +24,7 @@
         },
         {
             "label": "build release",
+            "detail": "release",
             "type": "shell",
             "command": "cargo",
             "args": [
