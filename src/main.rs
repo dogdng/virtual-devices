@@ -5,24 +5,159 @@ use std::fs::File;
 use std::thread;
 use std::time;
 
-fn canopen_data_process(recv_v: Vec<u8>) -> Vec<u8> {
-    let mut send_v: Vec<u8> = Vec::new();
+static mut MOTOR_WORK_MODE: [i8; 16] = [0; 16];
 
+fn canopen_data_process(node_id: u16, recv_v: Vec<u8>) -> Vec<u8> {
+    let mut send_v: Vec<u8> = Vec::new();
     let canopen_tdata_ok = 0x60;
     let canopen_rdata_1b = 0x4f;
     let canopen_rdata_2b = 0x4b;
-    let index = ((recv_v[2] as u16) << 8) & 0xff00 + (recv_v[1] as u16) & 0x00ff;
-    if index == 0x6040 { // READ_ALL
-        send_v.push(canopen_rdata_1b);
-        send_v.push(recv_v[1]);
-        send_v.push(recv_v[2]);
-        send_v.push(recv_v[3]);
+    let canopen_rdata_4b = 0x43;
+    let canopen_rdata_var = 0x41;
+    let index = ((recv_v[2] as u16) << 8) & 0xff00 | (recv_v[1] as u16) & 0x00ff;
+    if index == 0x1000 { // GetDeviceModel
+        send_v.push(canopen_rdata_4b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
     }
-    else if index == 0x6041 {
-        send_v.push(canopen_tdata_ok);
-        send_v.push(recv_v[1]);
-        send_v.push(recv_v[2]);
-        send_v.push(recv_v[3]);
+    else if index == 0x2ff7 { // GetDeviceTime
+        send_v.push(canopen_rdata_4b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x100c { // SetNodeHeartbeatProtectInterval
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x100d { // SetNodeHeartbeatProtectThreshols
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6007 { // SetHeartbeatEnable Enable
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6040 { // control word SetServoEnable
+        if recv_v[0] == 0x2f || recv_v[0] == 0x2b || recv_v[0] == 0x23 {
+            send_v.push(canopen_tdata_ok);
+        }
+            send_v.push(recv_v[1]); // index
+            send_v.push(recv_v[2]); // index
+            send_v.push(recv_v[3]); // sub index
+            // if recv_v[4] == 0x0b && recv_v[5] == 0x00 { // QuickStop
+                // log::info!("QuickStop");
+                send_v.push(0x00);
+                send_v.push(0x00);
+                send_v.push(0x00);
+                send_v.push(0x00);
+            // }
+    }
+    else if index == 0x605a { // SetQuickStopMode
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x605e { // SetFaultStopMode
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6060 { // SetControlMode
+        let id = node_id as usize;
+        unsafe{
+            log::info!("MOTOR_WORK_MODE: {:?}", MOTOR_WORK_MODE);
+            MOTOR_WORK_MODE[id] = recv_v[4] as i8;
+            log::info!("MOTOR_WORK_MODE: {:?}", MOTOR_WORK_MODE);
+        }
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6061 { // GetRunningMode
+        send_v.push(canopen_rdata_1b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        let id = node_id as usize;
+        unsafe{let work_mode = MOTOR_WORK_MODE[id]; send_v.push(work_mode as u8);}
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6063 { // GetCurrentSpeed
+        send_v.push(canopen_rdata_4b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x606c { // GetCurrentPosition
+        send_v.push(canopen_rdata_4b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6075 { // GetRateCurrent
+        send_v.push(canopen_rdata_4b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6078 { // GetLoadingRates
+        send_v.push(canopen_rdata_4b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6085 { // SetQuickStopDeceleration
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x60f6 { // GET_PEAK_DRIVER_UTILIZATION
+        send_v.push(canopen_rdata_2b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x60ff { // SetTargetSpeed
+        send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6410 { // GetMotorSn
+        send_v.push(canopen_rdata_var); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+        send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x6510 { // GET_PEAK_CURRENT
+            send_v.push(canopen_rdata_2b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x3000 { // GetCfg1BusVoltage
+            send_v.push(canopen_rdata_2b); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1008 { // GetDeviceName
+            send_v.push(canopen_rdata_var); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x100a { // GetSoftwareVersion
+            send_v.push(canopen_rdata_var); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x2ff8 { // GetSerialNum
+            send_v.push(canopen_rdata_var); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1005 { // SyncID
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1600 { // SetRPDO1
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1400 { // SetRPDO1
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1a00 { // SetRPDO1 off
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1a01 { // SetRPDO2
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1800 { // SetTPDO1ID
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else if index == 0x1801 { // SetRPDO2
+            send_v.push(canopen_tdata_ok); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+    }
+    else {
+            send_v.push(0xcc); send_v.push(recv_v[1]); send_v.push(recv_v[2]); send_v.push(recv_v[3]);
+            send_v.push(0x00); send_v.push(0x00); send_v.push(0x00); send_v.push(0x00);
+            log::error!("unknown canopen command : {:02x?}", send_v);
     }
     send_v
 }
@@ -35,7 +170,7 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
     let head: u8 = 0xfa;
     let tail: u8 = 0xff;
 
-    log::info!("------ >>>> {:02X?}", recv_data);
+    // log::info!("---- >>>> {:02x?}", recv_data);
     let mut index = 0;
     if head != recv_data[index] {
         log::warn!("recv_data format error : {:02x?}", recv_data);
@@ -44,28 +179,27 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
     resp.push(head);
     while 0xff != recv_data[index] {
         ret = true;
-        // let null_vec = Vec::new();
-        // return (false, null_vec);
-    
         let type_seq = recv_data[index];
         let cmd_type = (type_seq >> 4) & 0x0f;
-        
         // let sequence = type_seq & 0x0f;
         index += 1;
         // let cmd_length = recv_data[index];
-
-        // log::trace!("cmd_length : {:02X?}", cmd_length);
-        // log::trace!("cmd_length : {}", cmd_length);
         let mut ret_data: Vec<u8> = Vec::new();
-        if cmd_type == 0x00 {
-            // log::info!("test cmd.");
+        if cmd_type == 0x00 { // log::info!("test cmd.");
+            let pro_type = 0x11;
+            let ver_major = 0x22;
+            let ver_minor = 0x33;
+            let ver_revision = 0x44;
+            ret_data.push(pro_type);
+            ret_data.push(ver_major);
+            ret_data.push(ver_minor);
+            ret_data.push(ver_revision);
         }
-        else if cmd_type == 0x01 {
-            // log::info!("system cmd.");
+        else if cmd_type == 0x01 { // log::info!("system cmd.");
             index += 12;
         }
-        else if cmd_type == 0x02 {
-            // log::info!("redirect can.")
+        else if cmd_type == 0x02 {// log::info!("redirect can.")
+            // log::info!("---- >>>> {:02x?}", recv_data);
             index += 1;
             let wait_rsp = (recv_data[index] >> 7) & 0x01;
             let send_rsp = (recv_data[index] >> 6) & 0x01;
@@ -81,30 +215,59 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
             let is_canopen = (temp >> 15) & 0x0001;
             let canopen_timeout = (temp >> 11) & 0x000f;
             let can_id = temp & 0x07ff;
+            let mut ret_can_id = 0x0000;
             let mut can_data = Vec::new();
-            for i in 0..8 {
+            for i in 0..dlc {
                 index += 1;
                 let temp = recv_data[index];
                 can_data.push(temp);
             }
+            if (can_id & 0x0f00) == 0x0700 {
+                // log::info!("heart beat can data : {:02x?}", can_data);
+            }
+            else if (can_id & 0x0f00) == 0x0600 {
+                ret_can_id = can_id - 0x0600 + 0x0580;
+                ret_data.push(dlc);
+                ret_data.push(controller_id);
+                let can_id_h = ((ret_can_id >> 8) & 0x00ff) as u8;
+                let can_id_l = (ret_can_id & 0x00ff) as u8;
+                ret_data.push(can_id_h);
+                ret_data.push(can_id_l);
+                let mut canopen_data = canopen_data_process(can_id - 0x0600, can_data);
+                ret_data.append(&mut canopen_data);
+            }
+            else if (can_id & 0xff80) == 0x080 {
+                ret_can_id = can_id | 0x0200; // TPDO1 0x0100, TPDO2 0x0200
+                ret_data.push(8);
+                ret_data.push(controller_id);
+                let can_id_h = ((ret_can_id >> 8) & 0x00ff) as u8;
+                let can_id_l = (ret_can_id & 0x00ff) as u8;
+                ret_data.push(can_id_h);
+                ret_data.push(can_id_l);
+                for i in 0..8 {
+                    ret_data.push(0x01);
+                }
+            }
+            else if can_id == 0x0000 {
+                ret_can_id = can_id;
+                ret_data.push(0);
+                ret_data.push(controller_id);
+                let can_id_h = ((ret_can_id >> 8) & 0x00ff) as u8;
+                let can_id_l = (ret_can_id & 0x00ff) as u8;
+                ret_data.push(can_id_h);
+                ret_data.push(can_id_l);
+                // log::info!("---- >>>> {:02x?}", recv_data);
+                // return (false, vec![])
+            }
             // log::info!("can data : {:02x?}", can_data);
-            ////// 
-            ret_data.push(dlc);
-            ret_data.push(controller_id);
-            let can_id_h = ((can_id >> 8) & 0x00ff) as u8;
-            let can_id_l = (can_id & 0x00ff) as u8;
-            ret_data.push(can_id_h);
-            ret_data.push(can_id_l);
-            let mut canopen_data = canopen_data_process(can_data);
-            ret_data.append(&mut canopen_data);
         }
-        else if cmd_type == 0x03 {
-            log::info!("redirect IO.");
-            index += 1;
-            let group_id = recv_data[index];
+        else if cmd_type == 0x03 {// log::info!("redirect IO.");
+        // log::info!("---- >>>> {:02x?}", recv_data);
+        index += 1;
+        let group_id = recv_data[index];
             index += 1;
             // let timeout = (recv_data[index] >> 4) & 0x0f;
-            // let op_type = recv_data[index] & 0x01;
+            let op_type = recv_data[index] & 0x01; // 0x0：ReadPin 0x1：WritePin
             index += 1;
             let data_bit0 = recv_data[index];
             index += 1;
@@ -129,17 +292,22 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
             // log::trace!("pin_mask: {:b}", pin_mask);
             
             ret_data.push(group_id);
-            ret_data.push(data_bit0);
-            ret_data.push(data_bit1);
-            ret_data.push(data_bit2);
-            ret_data.push(data_bit3);
-            ret_data.push(mask_bit0);
-            ret_data.push(mask_bit1);
-            ret_data.push(mask_bit2);
-            ret_data.push(mask_bit3);
+            // if op_type == 0x01 {
+                // ret_data.push(data_bit0);
+                // ret_data.push(data_bit1);
+                // ret_data.push(data_bit2);
+                // ret_data.push(data_bit3);
+                ret_data.push(mask_bit0);
+                ret_data.push(mask_bit1);
+                ret_data.push(mask_bit2);
+                ret_data.push(mask_bit3);
+                ret_data.push(mask_bit0);
+                ret_data.push(mask_bit1);
+                ret_data.push(mask_bit2);
+                ret_data.push(mask_bit3);
+            // }
         }
-        else if cmd_type == 0x04 {
-            // log::info!("redirect com.");
+        else if cmd_type == 0x04 {// log::info!("redirect com.");
             index += 1;
             let wait_rsp = (recv_data[index] >> 7) & 0x01;
             let send_rsp = (recv_data[index] >> 6) & 0x01;
@@ -157,6 +325,36 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
             for i in 0..data_len {// data[8]
                 index += 1;
                 data.push(recv_data[index]);
+            }
+            //////// IMU ////////
+            if data_len > 0 {
+            if data[0] == 0x77 {
+                    if wait_rsp > 0 && send_rsp > 0 {
+                        let ret_dete_len = 14;
+                        ret_data.push(ret_dete_len);
+                        ret_data.push(controller_id);
+                        ret_data.push(0x77); ret_data.push(0x0d); ret_data.push(0x00); ret_data.push(0x84); ret_data.push(0x00); ret_data.push(0x02); ret_data.push(0x01);
+                        ret_data.push(0x10); ret_data.push(0x00); ret_data.push(0x51); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0xf5);
+                    }
+                    else {
+                        ret_data.push(0x00);
+                        ret_data.push(controller_id);
+                    }
+                }
+            }
+            else { // AGV codereader Dahua
+                if wait_rsp > 0 && send_rsp > 0 {
+                    let ret_dete_len = 21;
+                    ret_data.push(ret_dete_len);
+                    ret_data.push(controller_id);
+                    ret_data.push(0x00); ret_data.push(0x44); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0x04); ret_data.push(0x7f);
+                    ret_data.push(0x5c); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0x59); ret_data.push(0x00); ret_data.push(0x00);
+                    ret_data.push(0x00); ret_data.push(0x07); ret_data.push(0x77); ret_data.push(0x54); ret_data.push(0x00); ret_data.push(0x00); ret_data.push(0x4a);
+                }
+                else {
+                    ret_data.push(0x00);
+                    ret_data.push(controller_id);
+                }
             }
         }
         else if cmd_type == 0x05 {
@@ -265,11 +463,18 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
         else if cmd_type == 0x0b {
             // log::info!("msg group response.");
         }
-        else if cmd_type == 0x0c {
-            // log::info!("read count.");
+        else if cmd_type == 0x0c {// log::info!("read count.");
+            // log::info!("---- >>>> {:02x?}", recv_data);
+            let ticks_system_running = 0x00;
+            let cnt_processed_frames = 0x00;
+            let cnt_succ_instruction = 0xff;
+            let cnt_fail_instruction = 0xff;
+            ret_data.push(ticks_system_running); ret_data.push(ticks_system_running); ret_data.push(ticks_system_running); ret_data.push(ticks_system_running);
+            ret_data.push(cnt_processed_frames); ret_data.push(cnt_processed_frames); ret_data.push(cnt_processed_frames); ret_data.push(cnt_processed_frames);
+            ret_data.push(cnt_succ_instruction); ret_data.push(cnt_succ_instruction); ret_data.push(cnt_succ_instruction); ret_data.push(cnt_succ_instruction);
+            ret_data.push(cnt_fail_instruction); ret_data.push(cnt_fail_instruction); ret_data.push(cnt_fail_instruction); ret_data.push(cnt_fail_instruction);
         }
-        else if cmd_type == 0x0d {
-            // log::info!("Charging station.");
+        else if cmd_type == 0x0d {// log::info!("Charging station.");
             index += 1;
             let cmd_id  = recv_data[index];
             index += 1;
@@ -297,9 +502,9 @@ fn passive_data_process(recv_data: Vec<u8>) -> (bool, Vec<u8>) {
 
     resp.push(tail);
 
-    if ret {
-        log::info!("send data : {:02x?}", resp);
-    }
+    // if ret {
+    //     log::info!("send data : {:02x?}", resp);
+    // }
 
     (ret, resp)
 }
@@ -339,8 +544,8 @@ fn main() -> std::io::Result<()>{
     log::trace!("found active: {:?}", active_prot);
     log::trace!("found passive: {:?}", passive_prot);
     // UDP
-    // let (client_addr, socket) = udp_init("192.168.0.6:33366".to_string(), "192.168.0.100:33368".to_string());
-    let (client_addr, socket) = udp_init("127.0.0.1:33366".to_string(), "127.0.0.1:33368".to_string());
+    let (client_addr, socket) = udp_init("192.168.0.6:33366".to_string(), "192.168.0.100:33368".to_string());
+    // let (client_addr, socket) = udp_init("127.0.0.1:33366".to_string(), "127.0.0.1:33368".to_string());
 
     let mut data_buf = [0u8; 1024];
     loop {
@@ -390,9 +595,6 @@ fn main() -> std::io::Result<()>{
 
         if process_ret {
             socket.send_to(send_buf, client_addr).unwrap();//expect("Couldn't send data");
-        }
-        else{
-            log::error!("Process occur error, no data to send.")
         }
     }
 }
